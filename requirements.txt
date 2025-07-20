@@ -1,0 +1,19 @@
+# Requirements for APS M2000 Power Analyzer scripts
+
+# RS232 Interface
+pyserial>=3.5
+
+# USB Interface  
+hidapi>=0.12.0
+
+# LAN Interface uses built-in socket library (no extra requirements)
+
+# Unit formatting uses built-in Python libraries (no extra requirements)
+
+# Web UI Interface
+websockets>=10.0
+
+# Optional: For advanced data analysis
+numpy>=1.21.0
+pandas>=1.3.0
+matplotlib>=3.5.0

@@ -1,0 +1,752 @@
+
+You did not properly configure the handshaking lines, from section 24.1.1 om the manual:
+
+Baud Rate 9600, 19200, 57600 or 115200
+
+Handshake Bi-directional, hardware (RTS/CTS)
+
+Data Bits 8
+
+Parity None
+
+Start/Stop Bits 1
+
+Connector 9-pin Male Dsub
+
+Interface Pinout Type DTE (same as PC computer)
+
+Cable required 9-wire female-female null modem cable, fully wired
+
+Cable Length <50ft (per standard, in practice considerably longer cable lengths are often used without problems)
+
+Opening the port should look like:
+
+        ser = serial.Serial(
+
+            port=PORT,
+
+            baudrate=BAUD_RATE,
+
+            bytesize=serial.EIGHTBITS,
+
+            parity=serial.PARITY_NONE,
+
+            stopbits=serial.STOPBITS_ONE,
+
+            timeout=100,
+
+            write_timeout=100,
+
+            rtscts=True,  # Hardware flow control enabled
+
+            dsrdtr=True   # DTR enabled
+
+        )
+
+        ser.csr_state = ser.cts
+
+        ser.dsr_state = ser.dsr
+
+Those last two lines properly configure the control lines, I don’t remember why they are needed. The timeouts are what I use.
+
+Only queries such as ‘*IDN?’ produce a response.  The first commands you send are *RST and *CLS and there is not a response from those commands. Typically in the context of the SCPI world there are commands and there are queries. Commands do not produce a response, queries produce a response if the syntax is otherwise correct.
+
+About this (renamed for clarity, was CHANNEL_COMMANDS):
+
+CHANNEL_READ_QUERIES = {
+
+    "CH2": ["READ?,VOLTS,CH2,ACDC", "READ?,AMPS,CH2,ACDC", "READ?,WATTS,CH2"]  # Only channel 2
+
+}
+
+ 
+
+I think you wanted to read three things, it should look like:
+
+CHANNEL_READ_QUERIES = {
+
+    "CH2": ["READ?,ch2:VOLTS:ACDC", "READ?,AMPS:CH2:ACDC", "READ?,ch2:WATTS"]  # Only channel 2
+
+}
+
+ 
+
+By the way you could have used ‘READ?,ch2:VOLTS:ACDC;READ?,AMPS:CH2:ACDC;READ?,ch2:WATTS’.
+
+ 
+
+I don’t know what you were doing with format_value(), I pasted in this:
+
+  scpi_tools_nan = "9.91E37"
+
+ 
+
+  def FormatMeasurement(scientific_notation, units ):
+
+    if ( scientific_notation == scpi_tools_nan ):
+
+      return "--.-"+units
+
+    f = float(scientific_notation)
+
+    mc = "";
+
+    sign = "";
+
+    if ( f < 0.0 ):
+
+      sign = "-"
+
+      f = 0.0 - f;
+
+    if ( f < 0.000001 ):
+
+      mc = "n"
+
+      f = f * 1000000000.0
+
+    elif ( f < 0.001 ):
+
+      mc = "u"
+
+      f = f * 1000000.0
+
+    elif ( f < 1.0 ):
+
+      mc = "m"
+
+      f = f * 1000.0
+
+    elif ( f > 1000000.0 ):
+
+      mc = "M"
+
+      f = f / 1000000.0
+
+    elif ( f > 1500.0 ):
+
+      mc = "k"
+
+      f = f / 1000.0
+
+    f = round(f,3)
+
+    return sign+"{:.3f}".format(f)+mc+units
+
+ 
+
+Further considerations
+
+The read commands are asynchronous to the measurements. If you intend to read at some rate close to the measurement speed then use the mcr? query to know when fresh measurements are available.
+
+ 
+
+ 
+
+Code follows:
+
+import serial
+
+import time
+
+import os
+
+ 
+
+# Configuration settings for the RS232 connection
+
+PORT = "COM5"  # Using Prolific PL2303GT USB Serial COM Port
+
+BAUD_RATE = 115200
+
+TIMEOUT = 1  # 1 second timeout for read operations
+
+ 
+
+# Define commands to retrieve data for each channel
+
+CHANNEL_READ_QUERIES = {
+
+    "CH2": ["READ?,ch2:VOLTS:ACDC", "READ?,ch2:AMPS:ACDC", "READ?,ch2:WATTS"]  # Only channel 2
+
+}
+
+ 
+
+ 
+
+# Define corresponding units for each measurement type
+
+MEASUREMENT_UNITS = {
+
+    "VOLTS": "V",
+
+    "AMPS": "A",
+
+    "WATTS": "W"
+
+}
+
+ 
+
+def initialize_serial_connection():
+
+    """Initialize the serial connection with error handling."""
+
+    try:
+
+        ser = serial.Serial(
+
+            port=PORT,
+
+            baudrate=BAUD_RATE,
+
+            bytesize=serial.EIGHTBITS,
+
+            parity=serial.PARITY_NONE,
+
+            stopbits=serial.STOPBITS_ONE,
+
+            timeout=100,
+
+            write_timeout=100,
+
+            rtscts=True,  # Hardware flow control disabled
+
+            dsrdtr=True   # DTR disabled
+
+        )
+
+        ser.csr_state = ser.cts
+
+        ser.dsr_state = ser.dsr
+
+        # Clear any pending data
+
+        ser.reset_input_buffer()
+
+        ser.reset_output_buffer()
+
+        #tjw time.sleep(2)  # Give more time for port to stabilize
+
+       
+
+        if ser.is_open:
+
+            print(f"Connected to {PORT} at {BAUD_RATE} baud.")
+
+            return ser
+
+        else:
+
+            print(f"Failed to open serial port {PORT}.")
+
+            return None
+
+    except serial.SerialException as e:
+
+        print(f"Serial error: {e}")
+
+        return None
+
+ 
+
+def send_command(ser, command):
+
+    """Send command and return response"""
+
+    try:
+
+        if ser and ser.is_open:
+
+            # Add termination if not present
+
+            if not command.endswith('\r\n'):
+
+                command += '\r\n'
+
+            print(f"Sending: {command.strip()}")  # Debug print
+
+            ser.write(command.encode())
+
+            #tjw time.sleep(0.2)  # Increased delay
+
+           
+
+        else:
+
+            raise ConnectionError("Serial port not open.")
+
+    except (serial.SerialException, ValueError, ConnectionError) as e:
+
+        print(f"Error sending command '{command}': {e}")
+
+ 
+
+def send_query1(ser, query):
+
+    """Send command and return response"""
+
+    try:
+
+        if ser and ser.is_open:
+
+            # Add termination if not present
+
+            if not query.endswith('\r\n'):
+
+                query += '\r\n'
+
+            print(f"Sending: {query.strip()}")  # Debug print
+
+            ser.write(query.encode())
+
+            #tjw time.sleep(0.2)  # Increased delay
+
+           
+
+            # Read response
+
+            response = ''
+
+            start_time = time.time()
+
+            while True:
+
+                if ser.in_waiting:
+
+                    char = ser.read().decode()
+
+                    response += char
+
+                    if char == '\n':
+
+                        break
+
+                elif response:
+
+                    break
+
+                # Timeout after 3 seconds
+
+                if time.time() - start_time > 3:
+
+                    print(f"Timeout waiting for response to: {query.strip()}")
+
+                    break
+
+                   
+
+            print(f"Received: {response.strip()}")  # Debug print
+
+            return response.strip()
+
+        else:
+
+            raise ConnectionError("Serial port not open.")
+
+    except (serial.SerialException, ValueError, ConnectionError) as e:
+
+        print(f"Error sending command '{command}': {e}")
+
+        return "ERROR"
+
+ 
+
+def send_query1(ser, query):
+
+    """Send command and return response"""
+
+    try:
+
+        if ser and ser.is_open:
+
+            # Add termination if not present
+
+            if not query.endswith('\r\n'):
+
+                query += '\r\n'
+
+ 
+
+            print(f"Sending: {query.strip()}")  # Debug print
+
+ 
+
+            ser.write(query.encode())
+
+            ser.write("\r".encode())
+
+            read_val = ser.read_until()
+
+            response = read_val.decode("utf-8")[:-2].replace( ";", "\r\n" )
+
+ 
+
+            print(f"Received: {response}")  # Debug print
+
+            return response
+
+        else:
+
+            raise ConnectionError("Serial port not open.")
+
+    except (serial.SerialException, ValueError, ConnectionError) as e:
+
+        print(f"Error sending command '{command}': {e}")
+
+        return "ERROR"
+
+ 
+
+def initialize_device(ser):
+
+    """Initialize the device with error checks."""
+
+    if ser and ser.is_open:
+
+        print("Initializing device...")
+
+       
+
+        # Reset and clear device
+
+        if send_command(ser, "*RST") == "ERROR": return False
+
+        if send_command(ser, "*CLS") == "ERROR": return False
+
+       
+
+        # Get device info
+
+        print("\nDevice Information:")
+
+        idn = send_query1(ser, "*IDN?")
+
+        if "ERROR" in idn or not idn:
+
+            print("Failed to identify device.")
+
+            return False
+
+        print(idn)
+
+        error = send_query1(ser, "*ERR?")
+
+        if error and error != "0":
+
+            print(f"Error after IDN?: {error}")
+
+            return False
+
+       
+
+        # Get configuration
+
+        print("\nCurrent Configuration:")
+
+        config = {}
+
+       
+
+        # Get measurement mode
+
+        config['Mode'] = send_query1(ser, "MODE?")
+
+        error = send_query1(ser, "*ERR?")
+
+        if error and error != "0":
+
+            print(f"Error after MODE?: {error}")
+
+            return False
+
+       
+
+        # Check channel 2 (the one we're using)
+
+        channel_info = send_query1(ser, "CHNL?,2")
+
+        print( "tjw channel info:",channel_info)
+
+        error = send_query1(ser, "*ERR?")
+
+        if error and error != "0":
+
+            print(f"Error after CHNL?: {error}")
+
+            return False
+
+       
+
+        if channel_info:
+
+            config['Channel 2'] = {
+
+                'Info': channel_info
+
+            }
+
+ 
+
+        # Display configuration
+
+        for key, value in config.items():
+
+            print(f"\n{key}:")
+
+            if isinstance(value, dict):
+
+                for k, v in value.items():
+
+                    print(f"  {k}: {v}")
+
+            else:
+
+                print(f"  {value}")
+
+       
+
+        print("\nMeasurement initialization complete.")
+
+        return True
+
+    else:
+
+        print("Serial port not open for initialization.")
+
+        return False
+
+ 
+
+def format_value(value_str, unit):
+
+    """Format the measurement value with 3 decimal places and proper SI prefix with error handling."""
+
+    try:
+
+        # Split the response into individual values
+
+        # Format is typically: +231.587E+0-0.12057E-9+5.16737E-6
+
+        parts = value_str.split('+')
+
+        if len(parts) > 1:
+
+            value_part = parts[1]  # Take the first value after a + sign
+
+        else:
+
+            value_part = parts[0]
+
+           
+
+        # Extract just the first value (before any subsequent + or -)
+
+        value_part = value_part.split('+')[0].split('-')[0]
+
+       
+
+        # Parse scientific notation
+
+        if 'E' not in value_part:
+
+            return "Invalid Data"
+
+           
+
+        base_str, exp_str = value_part.split('E')
+
+        base = float(base_str)
+
+        exp = float(exp_str)  # Keep as float to handle +0, -6, etc.
+
+        value = base * (10 ** exp)
+
+           
+
+        # Format with appropriate SI prefix
+
+        if abs(value) >= 1:
+
+            return f"{value:.3f} {unit}"
+
+        elif abs(value) >= 1e-3:
+
+            return f"{value * 1e3:.3f} m{unit}"
+
+        elif abs(value) >= 1e-6:
+
+            return f"{value * 1e6:.3f} u{unit}"
+
+        else:
+
+            return f"{value * 1e9:.3f} n{unit}"
+
+    except Exception as e:
+
+        print(f"Error parsing value {value_str}: {e}")
+
+        return "Invalid Data"
+
+ 
+
+scpi_tools_nan = "9.91E37"
+
+ 
+
+def FormatMeasurement( scientific_notation, units ):
+
+  if ( scientific_notation == scpi_tools_nan ):
+
+    return "--.-"+units
+
+  f = float(scientific_notation)
+
+  mc = "";
+
+  sign = "";
+
+  if ( f < 0.0 ):
+
+    sign = "-"
+
+    f = 0.0 - f;
+
+  if ( f < 0.000001 ):
+
+    mc = "n"
+
+    f = f * 1000000000.0
+
+  elif ( f < 0.001 ):
+
+    mc = "u"
+
+    f = f * 1000000.0
+
+  elif ( f < 1.0 ):
+
+    mc = "m"
+
+    f = f * 1000.0
+
+  elif ( f > 1000000.0 ):
+
+    mc = "M"
+
+    f = f / 1000000.0
+
+  elif ( f > 1500.0 ):
+
+    mc = "k"
+
+    f = f / 1000.0
+
+  f = round(f,3)
+
+  return sign+"{:.3f}".format(f)+mc+units
+
+ 
+
+def display_horizontal_data(ser):
+
+    """Read and display complete channel data horizontally, refreshing every 10 seconds with error checks."""
+
+    while True:
+
+        os.system('cls' if os.name == 'nt' else 'clear')  # Clear screen for better visualization
+
+ 
+
+        formatted_output = []
+
+ 
+
+        for channel_num, (channel, commands) in enumerate(CHANNEL_READ_QUERIES.items(), 2):  # Start at 2 since we only use channel 2
+
+            # Check channel status
+
+            response = send_query1(ser, f'CHNL?,{channel_num}')  # Check channel
+
+            print(f"Channel {channel_num} response: {response}")
+
+            error = send_query1(ser, '*ERR?')
+
+            if error and error != "0":
+
+                print(f"Error after checking channel {channel_num}: {error}")
+
+                continue
+
+            #tjw time.sleep(0.5)  # Increased delay for stability
+
+ 
+
+            channel_data = []
+
+            for command in commands:
+
+                response = send_query1(ser, command)
+
+                if response == "ERROR":
+
+                    channel_data.append(f"{command.split(',')[1]}: ERROR")  # Use comma as separator
+
+                else:
+
+                    param = command.split(',')[1]  # Get VOLTS/AMPS/WATTS part
+
+                    unit = MEASUREMENT_UNITS.get(param, "")
+
+                    formatted_value = FormatMeasurement(response, unit)
+
+                    channel_data.append(f"{param}: {formatted_value}")
+
+                time.sleep(0.3)  # Delay between measurements
+
+           
+
+            formatted_output.append(f"{channel} - " + " | ".join(channel_data))
+
+ 
+
+        # Print horizontally across the screen
+
+        print("\n".join([
+
+            "--------------------------------------------------------------",
+
+            "\n".join(formatted_output),
+
+            "--------------------------------------------------------------",
+
+        ]))
+
+ 
+
+        time.sleep(10)  # Hold measurement display for 10 seconds before refreshing
+
+ 
+
+def main():
+
+    ser = initialize_serial_connection()
+
+    if ser:
+
+        if initialize_device(ser):  # Perform initialization with error checks
+
+            display_horizontal_data(ser)  # Display complete data horizontally
+
+        ser.close()
+
+    else:
+
+        print("Failed to establish serial connection.")
+
+ 
+
+if __name__ == "__main__":
+
+    main() 

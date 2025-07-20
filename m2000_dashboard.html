@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>APS M2000 Power Analyzer - Real-Time Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            min-height: 100vh;
+        }
+        
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header h1 {
+            color: #2c3e50;
+            font-size: 1.8rem;
+        }
+        
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #e74c3c;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-indicator.connected {
+            background: #27ae60;
+        }
+        
+        .status-indicator.connecting {
+            background: #f39c12;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        
+        .controls {
+            background: rgba(255, 255, 255, 0.9);
+            margin: 1rem 2rem;
+            padding: 1.5rem;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+        
+        .control-group {
+            display: flex;
+            gap: 2rem;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 1rem;
+        }
+        
+        .control-item {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        
+        .control-item label {
+            font-weight: 600;
+            color: #2c3e50;
+            font-size: 0.9rem;
+        }
+        
+        .control-item select,
+        .control-item input,
+        .control-item button {
+            padding: 0.5rem;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 0.9rem;
+        }
+        
+        .control-item button {
+            background: #3498db;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+        }
+        
+        .control-item button:hover {
+            background: #2980b9;
+            transform: translateY(-1px);
+        }
+        
+        .control-item button:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 2rem;
+            padding: 2rem;
+        }
+        
+        .measurement-card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 1.5rem;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+        }
+        
+        .measurement-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .card-header {
+            text-align: center;
+            margin-bottom: 1rem;
+            color: #2c3e50;
+            font-size: 1.2rem;
+            font-weight: 700;
+            border-bottom: 2px solid #ecf0f1;
+            padding-bottom: 0.5rem;
+        }
+        
+        .measurements-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .measurement-item {
+            text-align: center;
+            padding: 1rem;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-radius: 10px;
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+        
+        .measurement-item:hover {
+            border-color: #3498db;
+            transform: scale(1.02);
+        }
+        
+        .measurement-label {
+            font-size: 0.8rem;
+            color: #6c757d;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+        
+        .measurement-value {
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: #2c3e50;
+        }
+        
+        .measurement-unit {
+            font-size: 0.9rem;
+            color: #6c757d;
+            margin-left: 0.2rem;
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin-top: 1rem;
+        }
+        
+        .stats-bar {
+            background: rgba(255, 255, 255, 0.9);
+            margin: 0 2rem 2rem 2rem;
+            padding: 1rem 2rem;
+            border-radius: 10px;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+        
+        .stat-item {
+            text-align: center;
+        }
+        
+        .stat-label {
+            font-size: 0.8rem;
+            color: #6c757d;
+            font-weight: 600;
+        }
+        
+        .stat-value {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #2c3e50;
+        }
+        
+        .alert {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 1rem;
+            margin: 1rem 2rem;
+            border-radius: 5px;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .alert.success {
+            background: #d4edda;
+            color: #155724;
+            border-color: #c3e6cb;
+        }
+        
+        .alert.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border-color: #bee5eb;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .connection-config {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 0.5rem;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Responsive design */
+        @media (max-width: 768px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+                padding: 1rem;
+            }
+            
+            .header {
+                padding: 1rem;
+                flex-direction: column;
+                gap: 1rem;
+            }
+            
+            .control-group {
+                flex-direction: column;
+                gap: 1rem;
+            }
+            
+            .stats-bar {
+                flex-direction: column;
+                gap: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🔋 APS M2000 Power Analyzer Dashboard</h1>
+        <div class="connection-status">
+            <span id="connectionText">Disconnected</span>
+            <div class="status-indicator" id="statusIndicator"></div>
+        </div>
+    </div>
+    
+    <div class="controls">
+        <div class="control-group">
+            <div class="control-item">
+                <label for="interfaceSelect">Interface:</label>
+                <select id="interfaceSelect">
+                    <option value="lan">LAN/Ethernet</option>
+                    <option value="rs232">RS232</option>
+                    <option value="usb">USB</option>
+                </select>
+            </div>
+            
+            <div class="control-item" id="hostConfig">
+                <label for="hostInput">Host/IP:</label>
+                <input type="text" id="hostInput" value="192.168.1.100" placeholder="192.168.1.100">
+            </div>
+            
+            <div class="control-item" id="portConfig">
+                <label for="portInput">Port:</label>
+                <input type="text" id="portInput" value="/dev/ttyUSB0" placeholder="/dev/ttyUSB0">
+            </div>
+            
+            <div class="control-item">
+                <label for="rateInput">Sample Rate (Hz):</label>
+                <input type="number" id="rateInput" value="2.0" min="0.1" max="100" step="0.1">
+            </div>
+            
+            <div class="control-item">
+                <button id="connectBtn" onclick="toggleConnection()">Connect</button>
+            </div>
+        </div>
+        
+        <div class="control-group">
+            <div class="control-item">
+                <label for="channelsSelect">Channels:</label>
+                <select id="channelsSelect" multiple>
+                    <option value="CH1" selected>CH1</option>
+                    <option value="CH2">CH2</option>
+                    <option value="CH3">CH3</option>
+                    <option value="CH4">CH4</option>
+                    <option value="VPA1">VPA1</option>
+                    <option value="VPA2">VPA2</option>
+                    <option value="VPA3">VPA3</option>
+                </select>
+            </div>
+            
+            <div class="control-item">
+                <label for="paramsSelect">Parameters:</label>
+                <select id="paramsSelect" multiple>
+                    <option value="V" selected>Voltage (V)</option>
+                    <option value="A" selected>Current (A)</option>
+                    <option value="W" selected>Power (W)</option>
+                    <option value="VA">Apparent Power (VA)</option>
+                    <option value="VAR">Reactive Power (VAR)</option>
+                    <option value="PF">Power Factor</option>
+                    <option value="FREQ">Frequency (Hz)</option>
+                </select>
+            </div>
+            
+            <div class="control-item">
+                <button onclick="updateConfiguration()">Update Config</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="alertContainer"></div>
+    
+    <div class="stats-bar">
+        <div class="stat-item">
+            <div class="stat-label">Sample Count</div>
+            <div class="stat-value" id="sampleCount">0</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-label">Sample Rate</div>
+            <div class="stat-value" id="actualRate">0.0 Hz</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-label">Last Update</div>
+            <div class="stat-value" id="lastUpdate">--:--:--</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-label">Data Points</div>
+            <div class="stat-value" id="dataPoints">0</div>
+        </div>
+    </div>
+    
+    <div class="dashboard" id="dashboard">
+        <!-- Measurement cards will be dynamically generated here -->
+    </div>
+
+    <script>
+        // Global variables
+        let websocket = null;
+        let isConnected = false;
+        let currentConfig = {
+            channels: ['CH1'],
+            parameters: ['V', 'A', 'W'],
+            sample_rate: 2.0
+        };
+        let charts = {};
+        let dataHistory = {};
+        let sampleCount = 0;
+        let lastSampleTime = 0;
+        let dataPointCount = 0;
+        
+        // WebSocket connection
+        function connectWebSocket() {
+            const wsUrl = 'ws://localhost:8081';
+            
+            try {
+                websocket = new WebSocket(wsUrl);
+                
+                websocket.onopen = function(event) {
+                    console.log('WebSocket connected');
+                    updateConnectionStatus('WebSocket Connected', 'connecting');
+                };
+                
+                websocket.onmessage = function(event) {
+                    const message = JSON.parse(event.data);
+                    handleWebSocketMessage(message);
+                };
+                
+                websocket.onclose = function(event) {
+                    console.log('WebSocket disconnected');
+                    updateConnectionStatus('WebSocket Disconnected', 'disconnected');
+                    
+                    // Try to reconnect after 3 seconds
+                    setTimeout(connectWebSocket, 3000);
+                };
+                
+                websocket.onerror = function(error) {
+                    console.error('WebSocket error:', error);
+                    showAlert('WebSocket connection error. Make sure the server is running.', 'error');
+                };
+                
+            } catch (error) {
+                console.error('Failed to create WebSocket:', error);
+                showAlert('Failed to connect to WebSocket server.', 'error');
+            }
+        }
+        
+        function handleWebSocketMessage(message) {
+            switch (message.type) {
+                case 'config':
+                    currentConfig = {
+                        channels: message.channels,
+                        parameters: message.parameters,
+                        sample_rate: message.sample_rate
+                    };
+                    updateUI();
+                    if (message.connected) {
+                        updateConnectionStatus('M2000 Connected', 'connected');
+                        isConnected = true;
+                        document.getElementById('connectBtn').textContent = 'Disconnect';
+                    }
+                    break;
+                    
+                case 'data':
+                    updateMeasurements(message.measurements);
+                    updateStats(message.sample_count, message.timestamp);
+                    dataPointCount++;
+                    break;
+                    
+                case 'connect_response':
+                    if (message.success) {
+                        updateConnectionStatus('M2000 Connected', 'connected');
+                        isConnected = true;
+                        document.getElementById('connectBtn').textContent = 'Disconnect';
+                        showAlert('Successfully connected to M2000!', 'success');
+                    } else {
+                        updateConnectionStatus('Connection Failed', 'disconnected');
+                        showAlert('Failed to connect to M2000: ' + message.message, 'error');
+                    }
+                    document.getElementById('connectBtn').disabled = false;
+                    break;
+                    
+                case 'disconnect_response':
+                    updateConnectionStatus('Disconnected', 'disconnected');
+                    isConnected = false;
+                    document.getElementById('connectBtn').textContent = 'Connect';
+                    document.getElementById('connectBtn').disabled = false;
+                    showAlert('Disconnected from M2000', 'info');
+                    break;
+                    
+                case 'configure_response':
+                    if (message.success) {
+                        currentConfig = message.config;
+                        updateUI();
+                        showAlert('Configuration updated successfully!', 'success');
+                    }
+                    break;
+            }
+        }
+        
+        function updateConnectionStatus(text, status) {
+            document.getElementById('connectionText').textContent = text;
+            const indicator = document.getElementById('statusIndicator');
+            indicator.className = 'status-indicator ' + status;
+        }
+        
+        function showAlert(message, type = 'info') {
+            const container = document.getElementById('alertContainer');
+            const alert = document.createElement('div');
+            alert.className = `alert ${type}`;
+            alert.textContent = message;
+            
+            container.appendChild(alert);
+            
+            // Remove alert after 5 seconds
+            setTimeout(() => {
+                if (alert.parentNode) {
+                    alert.parentNode.removeChild(alert);
+                }
+            }, 5000);
+        }
+        
+        function toggleConnection() {
+            const connectBtn = document.getElementById('connectBtn');
+            connectBtn.disabled = true;
+            
+            if (!isConnected) {
+                // Connect
+                const interface = document.getElementById('interfaceSelect').value;
+                const config = getConnectionConfig(interface);
+                
+                const message = {
+                    type: 'connect',
+                    interface: interface,
+                    config: config
+                };
+                
+                if (websocket && websocket.readyState === WebSocket.OPEN) {
+                    websocket.send(JSON.stringify(message));
+                    connectBtn.innerHTML = 'Connecting... <span class="loading"></span>';
+                } else {
+                    showAlert('WebSocket not connected', 'error');
+                    connectBtn.disabled = false;
+                }
+            } else {
+                // Disconnect
+                const message = { type: 'disconnect' };
+                if (websocket && websocket.readyState === WebSocket.OPEN) {
+                    websocket.send(JSON.stringify(message));
+                    connectBtn.innerHTML = 'Disconnecting... <span class="loading"></span>';
+                } else {
+                    connectBtn.disabled = false;
+                }
+            }
+        }
+        
+        function getConnectionConfig(interface) {
+            const config = {};
+            
+            if (interface === 'lan') {
+                config.host = document.getElementById('hostInput').value || '192.168.1.100';
+                config.port = 10733;
+            } else if (interface === 'rs232') {
+                config.port = document.getElementById('portInput').value || '/dev/ttyUSB0';
+                config.baudrate = 9600;
+            } else if (interface === 'usb') {
+                config.device_index = 0;
+            }
+            
+            return config;
+        }
+        
+        function updateConfiguration() {
+            const channels = Array.from(document.getElementById('channelsSelect').selectedOptions)
+                .map(option => option.value);
+            const parameters = Array.from(document.getElementById('paramsSelect').selectedOptions)
+                .map(option => option.value);
+            const sample_rate = parseFloat(document.getElementById('rateInput').value) || 2.0;
+            
+            const message = {
+                type: 'configure',
+                channels: channels,
+                parameters: parameters,
+                sample_rate: sample_rate
+            };
+            
+            if (websocket && websocket.readyState === WebSocket.OPEN) {
+                websocket.send(JSON.stringify(message));
+            } else {
+                showAlert('WebSocket not connected', 'error');
+            }
+        }
+        
+        function updateUI() {
+            // Update interface-specific controls
+            const interface = document.getElementById('interfaceSelect').value;
+            const hostConfig = document.getElementById('hostConfig');
+            const portConfig = document.getElementById('portConfig');
+            const hostInput = document.getElementById('hostInput');
+            const portInput = document.getElementById('portInput');
+            
+            if (interface === 'lan') {
+                hostConfig.style.display = 'flex';
+                portConfig.style.display = 'none';
+                hostInput.placeholder = '192.168.1.100';
+                hostInput.value = hostInput.value || '192.168.1.100';
+            } else if (interface === 'rs232') {
+                hostConfig.style.display = 'none';
+                portConfig.style.display = 'flex';
+                portInput.placeholder = '/dev/ttyUSB0';
+                portInput.value = portInput.value || '/dev/ttyUSB0';
+                document.querySelector('label[for="portInput"]').textContent = 'Serial Port:';
+            } else if (interface === 'usb') {
+                hostConfig.style.display = 'none';
+                portConfig.style.display = 'none';
+            }
+            
+            // Update dashboard
+            updateDashboard();
+        }
+        
+        function updateDashboard() {
+            const dashboard = document.getElementById('dashboard');
+            dashboard.innerHTML = '';
+            
+            // Create measurement cards for each channel
+            currentConfig.channels.forEach(channel => {
+                const card = createMeasurementCard(channel);
+                dashboard.appendChild(card);
+            });
+        }
+        
+        function createMeasurementCard(channel) {
+            const card = document.createElement('div');
+            card.className = 'measurement-card';
+            card.id = `card-${channel}`;
+            
+            card.innerHTML = `
+                <div class="card-header">${channel}</div>
+                <div class="measurements-grid" id="measurements-${channel}">
+                    ${currentConfig.parameters.map(param => `
+                        <div class="measurement-item" id="${channel}-${param}">
+                            <div class="measurement-label">${getParameterLabel(param)}</div>
+                            <div class="measurement-value">--</div>
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="chart-container">
+                    <canvas id="chart-${channel}"></canvas>
+                </div>
+            `;
+            
+            // Create chart for this channel
+            setTimeout(() => createChart(channel), 100);
+            
+            return card;
+        }
+        
+        function getParameterLabel(param) {
+            const labels = {
+                'V': 'Voltage',
+                'A': 'Current',
+                'W': 'Power',
+                'VA': 'App. Power',
+                'VAR': 'React. Power',
+                'PF': 'Power Factor',
+                'FREQ': 'Frequency',
+                'PHASE': 'Phase'
+            };
+            return labels[param] || param;
+        }
+        
+        function createChart(channel) {
+            const ctx = document.getElementById(`chart-${channel}`);
+            if (!ctx) return;
+            
+            const datasets = currentConfig.parameters.map((param, index) => ({
+                label: getParameterLabel(param),
+                data: [],
+                borderColor: getColorForParameter(param, index),
+                backgroundColor: getColorForParameter(param, index) + '20',
+                tension: 0.4,
+                fill: false
+            }));
+            
+            charts[channel] = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            title: {
+                                display: true,
+                                text: 'Time (s)'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Value'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top'
+                        }
+                    },
+                    elements: {
+                        point: {
+                            radius: 2
+                        }
+                    }
+                }
+            });
+            
+            // Initialize data history for this channel
+            if (!dataHistory[channel]) {
+                dataHistory[channel] = {};
+                currentConfig.parameters.forEach(param => {
+                    dataHistory[channel][param] = [];
+                });
+            }
+        }
+        
+        function getColorForParameter(param, index) {
+            const colors = [
+                '#e74c3c', '#3498db', '#2ecc71', '#f39c12', 
+                '#9b59b6', '#1abc9c', '#e67e22', '#34495e'
+            ];
+            
+            const paramColors = {
+                'V': '#e74c3c',
+                'A': '#3498db', 
+                'W': '#2ecc71',
+                'VA': '#f39c12',
+                'VAR': '#9b59b6',
+                'PF': '#1abc9c',
+                'FREQ': '#e67e22',
+                'PHASE': '#34495e'
+            };
+            
+            return paramColors[param] || colors[index % colors.length];
+        }
+        
+        function updateMeasurements(measurements) {
+            const currentTime = Date.now() / 1000;
+            
+            Object.keys(measurements).forEach(channel => {
+                const channelData = measurements[channel];
+                
+                // Update measurement displays
+                Object.keys(channelData).forEach(param => {
+                    const element = document.getElementById(`${channel}-${param}`);
+                    if (element) {
+                        const valueElement = element.querySelector('.measurement-value');
+                        valueElement.textContent = channelData[param].formatted;
+                    }
+                    
+                    // Update chart data
+                    if (charts[channel] && dataHistory[channel] && dataHistory[channel][param]) {
+                        const value = channelData[param].raw;
+                        dataHistory[channel][param].push({
+                            x: currentTime,
+                            y: value
+                        });
+                        
+                        // Keep only last 100 points
+                        if (dataHistory[channel][param].length > 100) {
+                            dataHistory[channel][param].shift();
+                        }
+                        
+                        // Update chart dataset
+                        const paramIndex = currentConfig.parameters.indexOf(param);
+                        if (paramIndex >= 0 && charts[channel].data.datasets[paramIndex]) {
+                            charts[channel].data.datasets[paramIndex].data = [...dataHistory[channel][param]];
+                        }
+                    }
+                });
+                
+                // Update chart
+                if (charts[channel]) {
+                    charts[channel].update('none');
+                }
+            });
+        }
+        
+        function updateStats(count, timestamp) {
+            sampleCount = count;
+            
+            // Calculate sample rate
+            if (lastSampleTime > 0) {
+                const timeDiff = timestamp - lastSampleTime;
+                const actualRate = timeDiff > 0 ? 1.0 / timeDiff : 0;
+                document.getElementById('actualRate').textContent = actualRate.toFixed(1) + ' Hz';
+            }
+            lastSampleTime = timestamp;
+            
+            // Update other stats
+            document.getElementById('sampleCount').textContent = sampleCount;
+            document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+            document.getElementById('dataPoints').textContent = dataPointCount;
+        }
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            // Set up interface change handler
+            document.getElementById('interfaceSelect').addEventListener('change', updateUI);
+            
+            // Initialize UI
+            updateUI();
+            
+            // Connect WebSocket
+            connectWebSocket();
+        });
+    </script>
+</body>
+</html>
