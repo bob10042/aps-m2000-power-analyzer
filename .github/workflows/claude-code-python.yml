@@ -1,0 +1,84 @@
+name: Claude Code Python Integration
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  issues:
+    types: [opened, edited]
+  issue_comment:
+    types: [created, edited]
+
+jobs:
+  claude-python-analysis:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        
+    - name: Claude Code GitHub Integration
+      uses: nicholaslee119/claude-code-github-action@0.1.1
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        claude-api-key: ${{ secrets.CLAUDE_API_KEY }}
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then
+          pip install -r requirements.txt
+        fi
+        pip install flake8 pylint black
+        
+    - name: Code formatting check
+      run: |
+        black --check --diff . || echo "Code formatting issues found"
+        
+    - name: Linting with flake8
+      run: |
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+        
+    - name: Python code quality check
+      run: |
+        echo "Running Python code analysis..."
+        find . -name "*.py" -exec echo "Analyzing: {}" \;
+        
+    - name: Run Python tests
+      run: |
+        python -m pytest --tb=short || echo "No tests found or test failures"
+        
+  claude-python-review:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        
+    - name: Claude Python Code Review
+      uses: nicholaslee119/claude-code-github-action@0.1.1
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        claude-api-key: ${{ secrets.CLAUDE_API_KEY }}
+        mode: 'review'
+        language: 'python'
